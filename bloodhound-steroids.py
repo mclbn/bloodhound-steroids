@@ -8,7 +8,8 @@ from neo4j import GraphDatabase
 
 known_modules = [
     'samepass',
-    'samelocaladmin'
+    'samelocaladmin',
+    'storedpassword'
 ]
 
 def do_insert_samepassword(driver, user, others):
@@ -146,8 +147,52 @@ def do_samelocaladmin(driver, options):
     computers = list(set(computers))
 
     for computer in computers:
-        updated += do_insert_samelocal_admin(driver, '%s.%s' % (computer, options.domain),
-                             ['%s.%s' % (x, options.domain) for x in computers if x != computer])
+        updated += do_insert_samelocal_admin(
+            driver, '%s.%s' % (computer, options.domain),
+            ['%s.%s' % (x, options.domain) for x in computers if x != computer])
+    print('Updated : %d\n' % updated)
+
+def do_insert_storedpassword(driver, computer, users):
+    res_count = 0
+    query = """
+    MATCH (a:Computer), (b:User)
+    WHERE a.name = toUpper("%s")
+    AND b.name = toUpper("%s")
+    CREATE (a)-[r:StoredPassword]->(b)
+    RETURN r
+    """
+
+    for user in users:
+        with driver.session() as session:
+            try:
+                result = session.run(query % (computer, user))
+                res_count = len(result.value())
+            except Exception as e:
+                print(str(e))
+    return res_count
+
+def do_storedpassword(driver, options):
+    users = []
+    updated = 0
+
+    for user_file in options.user_file:
+        try:
+            f = open(user_file)
+        except Exception as e:
+            print(str(e))
+        else:
+            with f:
+                for line in f:
+                    clean = line.rstrip()
+                    if len(clean):
+                        users.append(clean)
+
+    users = list(set(users))
+
+    updated += do_insert_storedpassword(
+        driver, '%s.%s' % (options.computer, options.domain),
+        ['%s@%s' % (x, options.domain) for x in users])
+
     print('Updated : %d\n' % updated)
 
 if __name__ == '__main__':
@@ -167,6 +212,8 @@ if __name__ == '__main__':
                         help='a list of computer names (you can specify multiple files)')
     parser.add_argument('--nt-file', action='store',
                         help='a NT dump file (NTDS.DIT) to parse')
+    parser.add_argument('--computer', '-c', action='store',
+                        help='a computer name')
     parser.add_argument('--neo4j-host', '-n', action='store',
                         help='target neo4j host')
     parser.add_argument('--port', '-p', action='store', default=7687,
@@ -233,3 +280,12 @@ if __name__ == '__main__':
             print('You must specify a computer list.')
             sys.exit(1)
         do_samelocaladmin(driver, options)
+
+    if options.module == 'storedpassword':
+        if options.domain is None or len(options.domain) == 0:
+            print('You must specify a domain.')
+            sys.exit(1)
+        if options.user_file is None or options.computer is None:
+            print('You must specify a user list and a computer name.')
+            sys.exit(1)
+        do_storedpassword(driver, options)
