@@ -121,7 +121,6 @@ def do_insert_samelocal_admin(driver, computer, others):
     for other in others:
         with driver.session() as session:
             try:
-                print(query % (computer, other))
                 result = session.run(query % (computer, other))
                 res_count = len(result.value())
             except Exception as e:
