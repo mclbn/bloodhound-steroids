@@ -217,7 +217,7 @@ if __name__ == '__main__':
     parser.add_argument('--neo4j-host', '-n', action='store',
                         help='target neo4j host')
     parser.add_argument('--port', '-p', action='store', default=7687,
-                        help='target neo4j port (default: 7474)')
+                        help='target neo4j port (default: 7687)')
     parser.add_argument('--user', '-u', action='store', default='neo4j',
                         help='target neo4j username')
     parser.add_argument('--secret', '-s', action='store',
