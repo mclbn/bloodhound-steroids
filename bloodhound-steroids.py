@@ -99,9 +99,55 @@ def do_samepass_nt_file(driver, nt_file):
 
     return updated
 
+def do_samepass_combo_file(driver, combo_file):
+    updated = 0
+    nt = []
+    grouped_combo = {}
+    final = []
+
+    try:
+        f = open(combo_file)
+    except Exception as e:
+        print(str(e))
+    else:
+        with f:
+            for line in f:
+                clean = line.rstrip()
+                if len(clean):
+                    combo_entry = clean.split(':')
+
+                    nt.append({
+                        'username': combo_entry[0],
+                        'hash': combo_entry[1]
+                    })
+
+    for entry in nt:
+        if entry['hash'] not in grouped_combo.keys():
+            grouped_combo[entry['hash']] = [entry['username']]
+        else:
+            grouped_combo[entry['hash']].append(entry['username'])
+
+    for hash in grouped_combo.keys():
+        if hash == '31d6cfe0d16ae931b73c59d7e0c089c0':
+            print('The following users have an empty hash and will not be processed : %s'
+                  % ', '.join(grouped_combo[hash]))
+        if len(grouped_combo[hash]) > 1:
+            final.append(grouped_combo[hash])
+
+    for user_list in final:
+        for user in user_list:
+            updated += do_insert_samepassword(driver, '%s' % user,
+                             ['%s' % x for x in user_list if x != user])
+
+    return updated
+
 def do_samepass(driver, options):
     updated = 0
 
+    if options.combo_file is not None:
+        print('Using combo file as input, all other info will be ignored.')
+        updated += do_samepass_combo_file(driver, options.combo_file)
+        return
     if options.user_file is not None:
         updated += do_samepass_user_file(driver, options.user_file)
     if options.nt_file is not None:
@@ -128,11 +174,11 @@ def do_insert_samelocal_admin(driver, computer, others):
                 print(str(e))
     return res_count
 
-def do_samelocaladmin(driver, options):
+def do_samelocaladmin_computer_domain(driver, computer_files):
     computers = []
     updated = 0
 
-    for computer_file in options.computer_file:
+    for computer_file in computer_files:
         try:
             f = open(computer_file)
         except Exception as e:
@@ -150,6 +196,39 @@ def do_samelocaladmin(driver, options):
         updated += do_insert_samelocal_admin(
             driver, '%s.%s' % (computer, options.domain),
             ['%s.%s' % (x, options.domain) for x in computers if x != computer])
+    return updated
+
+def do_samelocaladmin_computer_fqdn(driver, computer_fqdn_files):
+    computers = []
+    updated = 0
+
+    for computer_fqdn_file in computer_fqdn_files:
+        try:
+            f = open(computer_fqdn_file)
+        except Exception as e:
+            print(str(e))
+        else:
+            with f:
+                for line in f:
+                    clean = line.rstrip()
+                    if len(clean):
+                        computers.append(clean)
+
+    computers = list(set(computers))
+
+    for computer in computers:
+        updated += do_insert_samelocal_admin(
+            driver, '%s' % computer,
+            [x for x in computers if x != computer])
+    return updated
+
+def do_samelocaladmin(driver, options):
+    updated = 0
+
+    if options.computer_file:
+        updated += do_samelocaladmin_computer_domain(driver, options.computer_file)
+    if options.computer_fqdn_file:
+        updated += do_samelocaladmin_computer_fqdn(driver, options.computer_fqdn_file)
     print('Updated : %d\n' % updated)
 
 def do_insert_storedpassword(driver, computer, users):
@@ -210,8 +289,12 @@ if __name__ == '__main__':
                         help='a list of user names (you can specify multiple files)')
     parser.add_argument('--computer-file', action='append',
                         help='a list of computer names (you can specify multiple files)')
+    parser.add_argument('--computer-fqdn-file', action='append',
+                        help='a list of fqdn computer names (you can specify multiple files)')
     parser.add_argument('--nt-file', action='store',
                         help='a NT dump file (NTDS.DIT) to parse')
+    parser.add_argument('--combo-file', '-b', action='store',
+                        help='a combo file (i.e. username@domain:hash, one by line)')
     parser.add_argument('--computer', '-c', action='store',
                         help='a computer name')
     parser.add_argument('--neo4j-host', '-n', action='store',
@@ -222,6 +305,7 @@ if __name__ == '__main__':
                         help='target neo4j username')
     parser.add_argument('--secret', '-s', action='store',
                         help='target neo4j secret')
+
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -261,10 +345,10 @@ if __name__ == '__main__':
     driver = GraphDatabase.driver(uri, auth=(username, password))
 
     if options.module == 'samepass':
-        if options.domain is None or len(options.domain) == 0:
+        if options.combo_file is None and (options.domain is None or len(options.domain) == 0):
             print('You must specify a domain.')
             sys.exit(1)
-        if options.user_file is None and options.nt_file is None:
+        if options.user_file is None and options.nt_file is None and options.combo_file is None:
             print('You must specify a user list or a dump file to parse.')
             sys.exit(1)
         if options.user_file is not None and options.nt_file is not None:
@@ -273,10 +357,10 @@ if __name__ == '__main__':
         do_samepass(driver, options)
 
     if options.module == 'samelocaladmin':
-        if options.domain is None or len(options.domain) == 0:
+        if options.computer_fqdn_file is None and (options.domain is None or len(options.domain) == 0):
             print('You must specify a domain.')
             sys.exit(1)
-        if options.computer_file is None:
+        if options.computer_file is None and options.computer_fqdn_file is None:
             print('You must specify a computer list.')
             sys.exit(1)
         do_samelocaladmin(driver, options)
@@ -289,3 +373,5 @@ if __name__ == '__main__':
             print('You must specify a user list and a computer name.')
             sys.exit(1)
         do_storedpassword(driver, options)
+
+    driver.close()
