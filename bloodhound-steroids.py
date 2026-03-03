@@ -9,7 +9,8 @@ from neo4j import GraphDatabase
 known_modules = [
     'samepass',
     'samelocaladmin',
-    'storedpassword'
+    'storedpassword',
+    'owned'
 ]
 
 def do_insert_samepassword(driver, user, others):
@@ -274,6 +275,45 @@ def do_storedpassword(driver, options):
 
     print('Updated : %d\n' % updated)
 
+def do_set_owned(driver, users_with_domain):
+    res_count = 0
+    query = """
+    MATCH (n) WHERE n.name = toUpper("%s")
+    SET n:Tag_Owned
+    """
+
+    for user in users_with_domain:
+        with driver.session() as session:
+            try:
+                result = session.run(query % user)
+                res_count = len(result.value())
+            except Exception as e:
+                print(str(e))
+    return res_count
+
+def do_owned(driver, options):
+    users = []
+    updated = 0
+
+    for user_file in options.user_file:
+        try:
+            f = open(user_file)
+        except Exception as e:
+            print(str(e))
+        else:
+            with f:
+                for line in f:
+                    clean = line.rstrip()
+                    if len(clean):
+                        users.append(clean)
+
+    users = list(set(users))
+
+    updated += do_set_owned(
+        driver, ['%s@%s' % (x, options.domain) for x in users])
+
+    print('Updated : %d\n' % updated)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         add_help = True,
@@ -373,5 +413,11 @@ if __name__ == '__main__':
             print('You must specify a user list and a computer name.')
             sys.exit(1)
         do_storedpassword(driver, options)
+
+    if options.module == 'owned':
+        if options.user_file is None or options.domain is None:
+            print('You must specify a user list and a domain name.')
+            sys.exit(1)
+        do_owned(driver, options)
 
     driver.close()
